@@ -16,27 +16,30 @@ let offset_ = 0;
 
 /**
  * Reset the instance. Loses all unprocessed data.
+ * @returns {Object} This object, for chaining.
  */
 function reset() {
     data_ = "";
     lineno_ = 1;
     offset_ = 0;
     return this;
-};
+}
 
 /**
  * Force processing of all buffered data as if it were followed by an end-of-file mark.
+ * @returns {Object} This object, for chaining.
  */
 function close() {
     return this;
-};
+}
 
 /**
  * Return current line number and offset.
+ * @returns {Array} list of current line number and offset
  */
 function getpos() {
     return [lineno_, offset_];
-};
+}
 
 /**
  * This method is called to handle the start of a tag
@@ -44,14 +47,14 @@ function getpos() {
  * @param {Array} attrs a list of (name, value) pairs containing the attributes.
  */
 function handleStarttag(tag, attrs) {
-};
+}
 
 /**
  * This method is called to handle the end tag of an element
  * @param {String} tag the name of the tag converted to lower case.
  */
 function handleEndtag(tag) {
-};
+}
 
 /**
  * called when the parser encounters an XHTML-style empty tag
@@ -61,36 +64,42 @@ function handleEndtag(tag) {
 function handleStartendtag(tag, attrs) {
     this.handleStarttag(tag, attrs);
     this.handleEndtag(tag);
-};
+}
 
 /**
  * This method is called to process arbitrary data
  * @param {String} data text nodes and the content of <script> and <style>
  */
 function handleData(data) {
-};
+}
 
 /**
  * This method is called when a comment is encountered
  * @param {String} data comment text
  */
 function handleComment(data) {
-};
+}
 
 /**
  * This method is called to handle an HTML doctype declaration
  * @param {String} decl entire contents of the declaration
  */
 function handleDecl(decl) {
-};
+}
 
 /**
  * Feed some text to the parser.
  * @param {String} data string composed of tag elements
+ * @returns {Object} This object, for chaining.
  */
 function feed(data) {
     data_ = data_ + data;
+    this.goahead_();
+    return this;
+}
 
+
+function goahead_() {
     while (offset_ < data_.length) {
         let i = data_.indexOf(openbracket, offset_);
         if (i < 0) {
@@ -185,6 +194,7 @@ function feed(data) {
                                     k = k + 1;
                                 }
                             }
+                            name = name.toLowerCase();
                             attrs.push([name, value]);
                         }
                     }
@@ -194,6 +204,4 @@ function feed(data) {
             }
         }
     }
-
-    return this;
-};
+}

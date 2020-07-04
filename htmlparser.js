@@ -1,3 +1,8 @@
+/**
+ * @file HTML parser like HTMLParser with Python.
+ * @author tanykazy
+ */
+
 const openbracket = "<";
 const closebracket = ">";
 const startcomment = "<!--";
@@ -5,23 +10,30 @@ const endcomment = "-->";
 const startdeclare = "<!";
 const startendtag = "</";
 const closeemptytag = " />";
-const whitespace = " ";
+const space = " ";
 const equal = "=";
 const doublequote = "\"";
 const singlequote = "'";
+const newline = "\n";
+const whitespace = /[ \n\t\r]/;
 
-let data_ = "";
-let lineno_ = 1;
-let offset_ = 0;
+/**
+ * HTML Parser class able to parse invalid markup.
+ * @class
+ */
+function HtmlParser() {
+    this.reset();
+}
 
 /**
  * Reset the instance. Loses all unprocessed data.
  * @returns {Object} This object, for chaining.
  */
-function reset() {
-    data_ = "";
-    lineno_ = 1;
-    offset_ = 0;
+HtmlParser.prototype.reset = function () {
+    this.rawdata = "";
+    this.lineno = 1;
+    this.position = 0;
+    this.offset = 0;
     return this;
 }
 
@@ -29,16 +41,16 @@ function reset() {
  * Force processing of all buffered data as if it were followed by an end-of-file mark.
  * @returns {Object} This object, for chaining.
  */
-function close() {
+HtmlParser.prototype.close = function () {
     return this;
 }
 
 /**
- * Return current line number and offset.
- * @returns {Array} list of current line number and offset
+ * Return current line number and position.
+ * @returns {Array} list of current line number and position
  */
-function getpos() {
-    return [lineno_, offset_];
+HtmlParser.prototype.getpos = function () {
+    return [this.lineno, this.position];
 }
 
 /**
@@ -46,14 +58,14 @@ function getpos() {
  * @param {String} tag the name of the tag converted to lower case.
  * @param {Array} attrs a list of (name, value) pairs containing the attributes.
  */
-function handleStarttag(tag, attrs) {
+HtmlParser.prototype.handleStarttag = function (tag, attrs) {
 }
 
 /**
  * This method is called to handle the end tag of an element
  * @param {String} tag the name of the tag converted to lower case.
  */
-function handleEndtag(tag) {
+HtmlParser.prototype.handleEndtag = function (tag) {
 }
 
 /**
@@ -61,7 +73,7 @@ function handleEndtag(tag) {
  * @param {String} tag the name of the tag converted to lower case.
  * @param {Array} attrs a list of (name, value) pairs containing the attributes.
  */
-function handleStartendtag(tag, attrs) {
+HtmlParser.prototype.handleStartendtag = function (tag, attrs) {
     this.handleStarttag(tag, attrs);
     this.handleEndtag(tag);
 }
@@ -70,94 +82,100 @@ function handleStartendtag(tag, attrs) {
  * This method is called to process arbitrary data
  * @param {String} data text nodes and the content of <script> and <style>
  */
-function handleData(data) {
+HtmlParser.prototype.handleData = function (data) {
 }
 
 /**
  * This method is called when a comment is encountered
  * @param {String} data comment text
  */
-function handleComment(data) {
+HtmlParser.prototype.handleComment = function (data) {
 }
 
 /**
  * This method is called to handle an HTML doctype declaration
  * @param {String} decl entire contents of the declaration
  */
-function handleDecl(decl) {
+HtmlParser.prototype.handleDecl = function (decl) {
 }
 
 /**
  * Feed some text to the parser.
- * @param {String} data string composed of tag elements
+ * @param {String} rawdata string composed of tag elements
  * @returns {Object} This object, for chaining.
  */
-function feed(data) {
-    data_ = data_ + data;
-    this.goahead_();
+HtmlParser.prototype.feed = function (rawdata) {
+    this.rawdata = this.rawdata + rawdata;
+    this.goahead();
     return this;
 }
 
-
-function goahead_() {
-    while (offset_ < data_.length) {
-        let i = data_.indexOf(openbracket, offset_);
+/**
+ * Internal -- handle data as far as reasonable.
+ * May leave state and data to be processed by a subsequent call.
+ * If 'end' is true, force handling all data as if followed by EOF marker.
+ * @param {Boolean} end force handling all data
+ */
+HtmlParser.prototype.goahead = function (end) {
+    while (this.offset < this.rawdata.length) {
+        let i = this.rawdata.indexOf(openbracket, this.offset);
         if (i < 0) {
             break;
         } else {
-            if (i > offset_) {
-                let data = data_.substring(offset_, i);
-                offset_ = i;
+            if (i > this.offset) {
+                let data = this.rawdata.substring(this.offset, i);
                 this.handleData(data);
-            } else if (data_.indexOf(startcomment, i) === i) {
+                this.offset = this.updatepos(this.offset, i);
+            } else if (this.rawdata.indexOf(startcomment, i) === i) {
                 i = i + startcomment.length;
-                let j = data_.indexOf(endcomment, i);
+                let j = this.rawdata.indexOf(endcomment, i);
                 if (j < 0) {
                     break;
                 } else {
-                    let data = data_.substring(i, j);
-                    offset_ = j + endcomment.length;
+                    let data = this.rawdata.substring(i, j);
                     this.handleComment(data);
+                    this.offset = this.updatepos(this.offset, j + endcomment.length);
                 }
-            } else if (data_.indexOf(startdeclare, i) === i) {
+            } else if (this.rawdata.indexOf(startdeclare, i) === i) {
                 i = i + startdeclare.length;
-                let j = data_.indexOf(closebracket, i);
+                let j = this.rawdata.indexOf(closebracket, i);
                 if (j < 0) {
                     break;
                 } else {
-                    let decl = data_.substring(i, j);
-                    offset_ = j + closebracket.length;
+                    let decl = this.rawdata.substring(i, j);
                     this.handleDecl(decl);
+                    this.offset = this.updatepos(this.offset, j + closebracket.length);
                 }
-            } else if (data_.indexOf(startendtag, i) === i) {
+            } else if (this.rawdata.indexOf(startendtag, i) === i) {
                 i = i + startendtag.length;
-                let j = data_.indexOf(closebracket, i);
+                let j = this.rawdata.indexOf(closebracket, i);
                 if (j < 0) {
                     break;
                 } else {
-                    let tag = data_.substring(i, j).toLowerCase();
-                    offset_ = j + closebracket.length;
+                    let tag = this.rawdata.substring(i, j).toLowerCase();
                     this.handleEndtag(tag);
+                    this.offset = this.updatepos(this.offset, j + closebracket.length);
                 }
             } else {
                 i = i + openbracket.length;
-                let j = data_.indexOf(closebracket, i);
+                let j = this.rawdata.indexOf(closebracket, i);
                 if (j < 0) {
                     break;
                 } else {
-                    let starttag_text = data_.substring(i, j);
-                    let k = starttag_text.indexOf(whitespace);
+                    let starttag_text = this.rawdata.substring(i, j);
+                    let k = starttag_text.indexOf(space);
                     let tag = "";
                     let attrs = [];
                     if (k < 0) {
                         tag = starttag_text.toLowerCase();
                     } else {
                         tag = starttag_text.substring(0, k).toLowerCase();
-                        k = k + whitespace.length;
+                        k = k + space.length;
                         while (k < starttag_text.length) {
                             let c = "";
                             let name = "";
                             let value = "";
+                            k = this.skipWhitespace(starttag_text, k);
                             while (k < starttag_text.length) {
                                 c = starttag_text.charAt(k);
                                 if (c === equal) {
@@ -198,10 +216,45 @@ function goahead_() {
                             attrs.push([name, value]);
                         }
                     }
-                    offset_ = j + closebracket.length;
                     this.handleStarttag(tag, attrs);
+                    this.offset = this.updatepos(this.offset, j + closebracket.length);
                 }
             }
         }
     }
+}
+
+/**
+ * Internal -- update line number and offset.
+ * @param {Number} start start offset
+ * @param {Number} end end offset
+ */
+HtmlParser.prototype.updatepos = function (start, end) {
+    if (start < end) {
+        let lines = this.rawdata.substring(start, end).split(newline);
+        let n = lines.length - 1;
+        if (n > 0) {
+            this.lineno = this.lineno + n;
+        }
+        this.position = lines[n].length;
+    }
+    return end;
+}
+
+/**
+ * Skip white space and return next offset.
+ * @param {String} text target text
+ * @param {Number} offset start offset
+ * @returns {Number} current offset
+ */
+HtmlParser.prototype.skipWhitespace = function (text, offset) {
+    while (offset < text.length) {
+        let c = text.charAt(offset);
+        if (/\s/.test(c)) {
+            offset = offset + 1;
+        } else {
+            break;
+        }
+    }
+    return offset;    
 }

@@ -9,13 +9,26 @@ const startcomment = "<!--";
 const endcomment = "-->";
 const startdeclare = "<!";
 const startendtag = "</";
-const closeemptytag = " />";
+// const closeemptytag = " />";
 const space = " ";
 const equal = "=";
 const doublequote = "\"";
 const singlequote = "'";
 const newline = "\n";
-const whitespace = /[ \n\t\r]/;
+
+const CDATA_CONTENT_ELEMENTS = ["script", "style"];
+
+// const reWhitespace = /[ \n\t\r]/;
+
+// const reOpenbracket = /</;
+// const reClosebracket = />/;
+// const reStartcomment = /<!--/;
+// const reEndcomment = /-->/;
+// const reStartdeclare = /<!/;
+// const reStartendtag = /<\//;
+// const reAttribute = /(?<=)x/;
+
+
 
 /**
  * HTML Parser class able to parse invalid markup.
@@ -34,6 +47,7 @@ HtmlParser.prototype.reset = function () {
     this.lineno = 1;
     this.position = 0;
     this.offset = 0;
+    this.lasttag = "";
     return this;
 }
 
@@ -42,6 +56,7 @@ HtmlParser.prototype.reset = function () {
  * @returns {Object} This object, for chaining.
  */
 HtmlParser.prototype.close = function () {
+    this.goahead(true);
     return this;
 }
 
@@ -73,10 +88,10 @@ HtmlParser.prototype.handleEndtag = function (tag) {
  * @param {String} tag the name of the tag converted to lower case.
  * @param {Array} attrs a list of (name, value) pairs containing the attributes.
  */
-HtmlParser.prototype.handleStartendtag = function (tag, attrs) {
-    this.handleStarttag(tag, attrs);
-    this.handleEndtag(tag);
-}
+// HtmlParser.prototype.handleStartendtag = function (tag, attrs) {
+//     this.handleStarttag(tag, attrs);
+//     this.handleEndtag(tag);
+// }
 
 /**
  * This method is called to process arbitrary data
@@ -106,7 +121,7 @@ HtmlParser.prototype.handleDecl = function (decl) {
  */
 HtmlParser.prototype.feed = function (rawdata) {
     this.rawdata = this.rawdata + rawdata;
-    this.goahead();
+    this.goahead(false);
     return this;
 }
 
@@ -118,47 +133,90 @@ HtmlParser.prototype.feed = function (rawdata) {
  */
 HtmlParser.prototype.goahead = function (end) {
     while (this.offset < this.rawdata.length) {
+        if (CDATA_CONTENT_ELEMENTS.includes(this.lasttag)) {
+            let i = this.rawdata.indexOf("</" + this.lasttag + ">", this.offset);
+            if (i < 0) {
+                break;
+            } else {
+                let data = this.rawdata.substring(this.offset, i);
+                this.offset = this.updatepos(this.offset, i);
+                if (data.length > 0) {
+                    this.handleData(data);
+                }
+            }
+        }
         let i = this.rawdata.indexOf(openbracket, this.offset);
         if (i < 0) {
+            if (end) {
+                let length = this.rawdata.length;
+                let data = this.rawdata.substring(this.offset, length);
+                this.offset = this.updatepos(this.offset, length);
+                data = this.stripCollapseWhitespace(data);
+                if (data.length > 0) {
+                    this.handleData(data);
+                }
+            }
             break;
         } else {
             if (i > this.offset) {
                 let data = this.rawdata.substring(this.offset, i);
-                this.handleData(data);
                 this.offset = this.updatepos(this.offset, i);
+                data = this.stripCollapseWhitespace(data);
+                if (data.length > 0) {
+                    this.handleData(data);
+                }
             } else if (this.rawdata.indexOf(startcomment, i) === i) {
                 i = i + startcomment.length;
                 let j = this.rawdata.indexOf(endcomment, i);
                 if (j < 0) {
+                    if (end) {
+                        let length = this.rawdata.length;
+                        let data = this.rawdata.substring(i, length);
+                        this.offset = this.updatepos(this.offset, length);
+                        this.handleComment(data);
+                    }
                     break;
                 } else {
                     let data = this.rawdata.substring(i, j);
-                    this.handleComment(data);
                     this.offset = this.updatepos(this.offset, j + endcomment.length);
+                    this.handleComment(data);
                 }
             } else if (this.rawdata.indexOf(startdeclare, i) === i) {
                 i = i + startdeclare.length;
                 let j = this.rawdata.indexOf(closebracket, i);
                 if (j < 0) {
+                    if (end) {
+                        let length = this.rawdata.length;
+                        let data = this.rawdata.substring(i, length);
+                        this.offset = this.updatepos(this.offset, length);
+                        this.handleDecl(data);
+                    }
                     break;
                 } else {
                     let decl = this.rawdata.substring(i, j);
-                    this.handleDecl(decl);
                     this.offset = this.updatepos(this.offset, j + closebracket.length);
+                    this.handleDecl(decl);
                 }
             } else if (this.rawdata.indexOf(startendtag, i) === i) {
                 i = i + startendtag.length;
                 let j = this.rawdata.indexOf(closebracket, i);
                 if (j < 0) {
+                    if (end) {
+                        let length = this.rawdata.length;
+                        let data = this.rawdata.substring(i, length);
+                        this.offset = this.updatepos(this.offset, length);
+                        this.handleEndtag(data);
+                    }
                     break;
                 } else {
                     let tag = this.rawdata.substring(i, j).toLowerCase();
-                    this.handleEndtag(tag);
                     this.offset = this.updatepos(this.offset, j + closebracket.length);
+                    this.handleEndtag(tag);
+                    this.lasttag = "";
                 }
             } else {
                 i = i + openbracket.length;
-                let j = this.rawdata.indexOf(closebracket, i);
+                j = this.rawdata.indexOf(closebracket, i);
                 if (j < 0) {
                     break;
                 } else {
@@ -211,17 +269,31 @@ HtmlParser.prototype.goahead = function (end) {
                                     }
                                     k = k + 1;
                                 }
+                            } else {
+                                while (k < starttag_text.length) {
+                                    c = starttag_text.charAt(k);
+                                    if (c === space) {
+                                        k = k + space.length;
+                                        break;
+                                    } else {
+                                        value = value + c;
+                                    }
+                                    k = k + 1;
+                                }
                             }
                             name = name.toLowerCase();
                             attrs.push([name, value]);
                         }
                     }
+                    this.offset = this.updatepos(i, j + closebracket.length);
                     this.handleStarttag(tag, attrs);
-                    this.offset = this.updatepos(this.offset, j + closebracket.length);
+                    this.lasttag = tag;
                 }
             }
         }
     }
+    this.rawdata = this.rawdata.substring(this.offset);
+    this.offset = 0;
 }
 
 /**
@@ -242,6 +314,15 @@ HtmlParser.prototype.updatepos = function (start, end) {
 }
 
 /**
+ * strip and collapse whitespace in a string.
+ * @param {String} text input string
+ * @returns {String} result String
+ */
+HtmlParser.prototype.stripCollapseWhitespace = function (text) {
+    return text.replace(/\s+/, " ").trim();
+}
+
+/**
  * Skip white space and return next offset.
  * @param {String} text target text
  * @param {Number} offset start offset
@@ -256,5 +337,5 @@ HtmlParser.prototype.skipWhitespace = function (text, offset) {
             break;
         }
     }
-    return offset;    
+    return offset;
 }
